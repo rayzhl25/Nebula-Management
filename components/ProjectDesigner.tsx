@@ -16,7 +16,13 @@ import {
   FolderInput,
   Folder as FolderIcon,
   ChevronLeft,
-  GitGraph
+  GitGraph,
+  PanelBottom,
+  Bug,
+  Eraser,
+  Filter,
+  Terminal,
+  AlertCircle
 } from 'lucide-react';
 import { Language } from '../types';
 import { LOCALE } from '../constants';
@@ -26,6 +32,8 @@ import DatabaseDesigner from './designer/DatabaseDesigner';
 import ExternalApiDesigner from './designer/ExternalApiDesigner';
 import GitRepository from './designer/GitRepository';
 import ProjectSettings from './designer/ProjectSettings';
+import DebugConsole from './designer/DebugConsole';
+import { ProjectExplorer } from './designer/ProjectExplorer';
 import { FileTree, FileSystemItem, ContextMenu, FileType } from './designer/FileTree';
 
 interface ProjectDesignerProps {
@@ -142,16 +150,8 @@ const ProjectDesigner: React.FC<ProjectDesignerProps> = ({ project, lang, onBack
     { id: 't1', fileId: 'p1', title: '登录页面', type: 'frontend' }
   ]);
   
-  const [sidebarExpanded, setSidebarExpanded] = useState({
-    pages: true,
-    apps: true,
-    apis: true,
-    models: true,
-    external: true
-  });
-
   // UI State
-  const [showExplorer, setShowExplorer] = useState(false);
+  const [showExplorer, setShowExplorer] = useState(true); // Default show
   const [clipboard, setClipboard] = useState<{ type: 'cut' | 'copy', item: FileSystemItem } | null>(null);
   const [isProjectDirOpen, setIsProjectDirOpen] = useState(false); // Project Directory Dialog State
   
@@ -159,10 +159,10 @@ const ProjectDesigner: React.FC<ProjectDesignerProps> = ({ project, lang, onBack
   const [sidebarWidth, setSidebarWidth] = useState(256);
   const [isResizing, setIsResizing] = useState(false);
 
-  // Search State
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isSearchActive, setIsSearchActive] = useState(false);
-  const searchInputRef = useRef<HTMLInputElement>(null);
+  // Bottom Debug Panel State
+  const [showBottomPanel, setShowBottomPanel] = useState(false);
+  const [bottomPanelHeight, setBottomPanelHeight] = useState(250);
+  const [isResizingBottom, setIsResizingBottom] = useState(false);
 
   // Context Menu State (Tree)
   const [contextMenu, setContextMenu] = useState<{
@@ -184,7 +184,7 @@ const ProjectDesigner: React.FC<ProjectDesignerProps> = ({ project, lang, onBack
     isOpen: false, type: 'create_file', targetId: null, value: ''
   });
 
-  // --- Resizing Logic ---
+  // --- Resizing Logic (Sidebar) ---
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isResizing) return;
@@ -210,42 +210,35 @@ const ProjectDesigner: React.FC<ProjectDesignerProps> = ({ project, lang, onBack
     };
   }, [isResizing]);
 
-  // --- Filtering Logic ---
-  const filterTree = (items: FileSystemItem[], query: string): FileSystemItem[] => {
-    if (!query) return items;
-    
-    return items.reduce<FileSystemItem[]>((acc, item) => {
-      const matchesName = item.name.toLowerCase().includes(query.toLowerCase());
-      
-      if (item.children) {
-        const filteredChildren = filterTree(item.children, query);
-        if (matchesName || filteredChildren.length > 0) {
-          acc.push({
-            ...item,
-            children: filteredChildren,
-            isOpen: true // Automatically expand matched paths
-          });
-        }
-      } else {
-        if (matchesName) {
-          acc.push(item);
-        }
-      }
-      return acc;
-    }, []);
-  };
-
-  const visiblePages = useMemo(() => filterTree(pages, searchQuery), [pages, searchQuery]);
-  const visibleApps = useMemo(() => filterTree(apps, searchQuery), [apps, searchQuery]);
-  const visibleApis = useMemo(() => filterTree(apis, searchQuery), [apis, searchQuery]);
-  const visibleModels = useMemo(() => filterTree(models, searchQuery), [models, searchQuery]);
-  const visibleExternal = useMemo(() => filterTree(externalApis, searchQuery), [externalApis, searchQuery]);
-
+  // --- Resizing Logic (Bottom Panel) ---
   useEffect(() => {
-    if (isSearchActive && searchInputRef.current) {
-        searchInputRef.current.focus();
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizingBottom) return;
+      e.preventDefault();
+      // Calculate height from bottom
+      const newHeight = window.innerHeight - e.clientY;
+      if (newHeight > 100 && newHeight < window.innerHeight - 100) {
+        setBottomPanelHeight(newHeight);
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsResizingBottom(false);
+    };
+
+    if (isResizingBottom) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = 'ns-resize';
+    } else {
+        document.body.style.cursor = 'default';
     }
-  }, [isSearchActive]);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizingBottom]);
 
   // --- Helpers ---
 
@@ -658,10 +651,6 @@ const ProjectDesigner: React.FC<ProjectDesignerProps> = ({ project, lang, onBack
     }
   };
 
-  const toggleSidebarGroup = (group: keyof typeof sidebarExpanded) => {
-    setSidebarExpanded(prev => ({ ...prev, [group]: !prev[group] }));
-  };
-
   const addRootItem = (root: 'pages' | 'apps' | 'apis' | 'models' | 'external', isFolder: boolean) => {
       let type: FileType = 'frontend';
       if (root === 'apis') type = 'backend';
@@ -695,218 +684,28 @@ const ProjectDesigner: React.FC<ProjectDesignerProps> = ({ project, lang, onBack
     >
       
       {/* 1. Project Explorer Sidebar (Full Height, Left Side) */}
-      <div 
-          className={`
-              bg-gray-50 dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 flex flex-col relative
-              transition-all duration-300 ease-in-out h-full
-          `}
-          style={{ width: showExplorer ? sidebarWidth : 0, opacity: showExplorer ? 1 : 0, overflow: showExplorer ? 'visible' : 'hidden', borderRightWidth: showExplorer ? 1 : 0 }}
-      >
-         {/* Resizer Handle */}
-         {showExplorer && (
-           <div 
-             className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-nebula-500 z-50 transition-colors"
-             onMouseDown={(e) => { e.stopPropagation(); setIsResizing(true); }}
-           />
-         )}
+      <ProjectExplorer 
+        isVisible={showExplorer}
+        width={sidebarWidth}
+        onResizeStart={() => setIsResizing(true)}
+        activeFileId={activeTab?.fileId || null}
+        items={{
+          pages,
+          apps,
+          apis,
+          models,
+          external: externalApis
+        }}
+        onOpenFile={handleOpenFile}
+        onToggleFolder={handleToggleFolder}
+        onContextMenu={handleContextMenu}
+        onRootContextMenu={handleRootContextMenu}
+        onMoveNode={handleMoveNode}
+        onAddRootItem={addRootItem}
+      />
 
-         {/* Inner Container to hold content at fixed width during transition */}
-         <div className="flex flex-col h-full overflow-hidden" style={{ width: '100%' }}>
-             <div className="p-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between text-xs font-bold text-gray-500 uppercase tracking-wider h-12 flex-shrink-0">
-                {isSearchActive ? (
-                  <div className="flex items-center flex-1 gap-2 bg-white dark:bg-gray-800 px-2 py-1 rounded border border-nebula-500">
-                     <Search size={12} className="text-nebula-500" />
-                     <input 
-                       ref={searchInputRef}
-                       type="text" 
-                       value={searchQuery}
-                       onChange={(e) => setSearchQuery(e.target.value)}
-                       onBlur={() => { if(!searchQuery) setIsSearchActive(false); }}
-                       className="flex-1 bg-transparent outline-none text-gray-800 dark:text-white"
-                       placeholder="Search files..."
-                     />
-                     <button onClick={() => { setSearchQuery(''); setIsSearchActive(false); }}><X size={12} className="text-gray-400 hover:text-gray-600" /></button>
-                  </div>
-                ) : (
-                  <>
-                    <span>Project Explorer</span>
-                    <button onClick={() => setIsSearchActive(true)} className="p-1 hover:bg-gray-200 dark:hover:bg-gray-800 rounded" title="Search Files"><Search size={12} /></button>
-                  </>
-                )}
-             </div>
-             
-             <div className="flex-1 overflow-y-auto p-2 space-y-1">
-                
-                {/* Web Pages Group */}
-                <div>
-                   <div 
-                     className="flex items-center justify-between group cursor-context-menu"
-                     onContextMenu={(e) => handleRootContextMenu(e, 'pages')}
-                   >
-                      <button 
-                        onClick={() => toggleSidebarGroup('pages')}
-                        className="flex-1 flex items-center gap-1 px-2 py-1 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded text-xs font-medium"
-                      >
-                          {sidebarExpanded.pages ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                          <Monitor size={14} className="text-blue-500" />
-                          Web端
-                      </button>
-                      <div className="hidden group-hover:flex">
-                          <button onClick={(e) => { e.stopPropagation(); addRootItem('pages', false); }} className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded text-gray-500"><Plus size={10} /></button>
-                      </div>
-                   </div>
-                   {sidebarExpanded.pages && (
-                      <div className="mt-1">
-                         <FileTree 
-                            items={visiblePages} 
-                            activeId={activeTab?.fileId || null}
-                            onSelect={handleOpenFile}
-                            onToggle={handleToggleFolder}
-                            onContextMenu={handleContextMenu}
-                            onMove={(draggedId, targetId) => handleMoveNode(draggedId, targetId, 'pages')}
-                            rootType="pages"
-                            showDetails={false}
-                         />
-                      </div>
-                   )}
-                </div>
-
-                {/* App Group */}
-                <div className="mt-2">
-                   <div 
-                     className="flex items-center justify-between group cursor-context-menu"
-                     onContextMenu={(e) => handleRootContextMenu(e, 'apps')}
-                   >
-                      <button 
-                        onClick={() => toggleSidebarGroup('apps')}
-                        className="flex-1 flex items-center gap-1 px-2 py-1 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded text-xs font-medium"
-                      >
-                          {sidebarExpanded.apps ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                          <Smartphone size={14} className="text-purple-500" />
-                          App端
-                      </button>
-                      <div className="hidden group-hover:flex">
-                          <button onClick={(e) => { e.stopPropagation(); addRootItem('apps', false); }} className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded text-gray-500"><Plus size={10} /></button>
-                      </div>
-                   </div>
-                   {sidebarExpanded.apps && (
-                      <div className="mt-1">
-                         <FileTree 
-                            items={visibleApps} 
-                            activeId={activeTab?.fileId || null}
-                            onSelect={handleOpenFile}
-                            onToggle={handleToggleFolder}
-                            onContextMenu={handleContextMenu}
-                            onMove={(draggedId, targetId) => handleMoveNode(draggedId, targetId, 'apps')}
-                            rootType="apps"
-                            showDetails={false}
-                         />
-                      </div>
-                   )}
-                </div>
-
-                {/* Backend Group */}
-                <div className="mt-2">
-                   <div 
-                     className="flex items-center justify-between group cursor-context-menu"
-                     onContextMenu={(e) => handleRootContextMenu(e, 'apis')}
-                   >
-                      <button 
-                        onClick={() => toggleSidebarGroup('apis')}
-                        className="flex-1 flex items-center gap-1 px-2 py-1 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded text-xs font-medium"
-                      >
-                          {sidebarExpanded.apis ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                          <Server size={14} className="text-green-500" />
-                          后端服务
-                      </button>
-                      <div className="hidden group-hover:flex">
-                          <button onClick={(e) => { e.stopPropagation(); addRootItem('apis', false); }} className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded text-gray-500"><Plus size={10} /></button>
-                      </div>
-                   </div>
-                   {sidebarExpanded.apis && (
-                      <div className="mt-1">
-                         <FileTree 
-                            items={visibleApis} 
-                            activeId={activeTab?.fileId || null}
-                            onSelect={handleOpenFile}
-                            onToggle={handleToggleFolder}
-                            onContextMenu={handleContextMenu}
-                            onMove={(draggedId, targetId) => handleMoveNode(draggedId, targetId, 'apis')}
-                            rootType="apis"
-                            showDetails={false}
-                         />
-                      </div>
-                   )}
-                </div>
-
-                {/* Database Group */}
-                <div className="mt-2">
-                   <div className="flex items-center justify-between group">
-                      <button 
-                        onClick={() => toggleSidebarGroup('models')}
-                        className="flex-1 flex items-center gap-1 px-2 py-1 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded text-xs font-medium"
-                      >
-                          {sidebarExpanded.models ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                          <Database size={14} className="text-amber-500" />
-                          数据库
-                      </button>
-                      <div className="hidden group-hover:flex">
-                          <button onClick={(e) => { e.stopPropagation(); addRootItem('models', false); }} className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded text-gray-500"><Plus size={10} /></button>
-                      </div>
-                   </div>
-                   {sidebarExpanded.models && (
-                      <div className="mt-1">
-                         <FileTree 
-                            items={visibleModels} 
-                            activeId={activeTab?.fileId || null}
-                            onSelect={handleOpenFile}
-                            onToggle={handleToggleFolder}
-                            onContextMenu={handleContextMenu}
-                            onMove={(draggedId, targetId) => handleMoveNode(draggedId, targetId, 'models')}
-                            rootType="models"
-                            showDetails={false}
-                         />
-                      </div>
-                   )}
-                </div>
-
-                {/* External Interfaces Group */}
-                <div className="mt-2">
-                   <div className="flex items-center justify-between group">
-                      <button 
-                        onClick={() => toggleSidebarGroup('external')}
-                        className="flex-1 flex items-center gap-1 px-2 py-1 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded text-xs font-medium"
-                      >
-                          {sidebarExpanded.external ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                          <Globe size={14} className="text-purple-500" />
-                          外部接口
-                      </button>
-                      <div className="hidden group-hover:flex">
-                          <button onClick={(e) => { e.stopPropagation(); addRootItem('external', false); }} className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded text-gray-500"><Plus size={10} /></button>
-                      </div>
-                   </div>
-                   {sidebarExpanded.external && (
-                      <div className="mt-1">
-                         <FileTree 
-                            items={visibleExternal} 
-                            activeId={activeTab?.fileId || null}
-                            onSelect={handleOpenFile}
-                            onToggle={handleToggleFolder}
-                            onContextMenu={handleContextMenu}
-                            onMove={(draggedId, targetId) => handleMoveNode(draggedId, targetId, 'external')}
-                            rootType="external"
-                            showDetails={false}
-                         />
-                      </div>
-                   )}
-                </div>
-
-             </div>
-         </div>
-      </div>
-
-      {/* 2. Main Right Column (Header + Content) */}
-      <div className="flex-1 flex flex-col min-w-0 h-full">
+      {/* 2. Main Right Column (Header + Content + Debug Panel) */}
+      <div className="flex-1 flex flex-col min-w-0 h-full relative">
           
           {/* Header */}
           <header className="h-12 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between px-4 z-20 shadow-sm flex-shrink-0">
@@ -966,6 +765,14 @@ const ProjectDesigner: React.FC<ProjectDesignerProps> = ({ project, lang, onBack
             </div>
 
             <div className="flex items-center gap-2">
+               {/* Debug Toggle */}
+               <button 
+                 onClick={() => setShowBottomPanel(!showBottomPanel)} 
+                 className={`p-1.5 rounded transition-colors ${showBottomPanel ? 'bg-nebula-100 text-nebula-600 dark:bg-nebula-900/30 dark:text-nebula-400' : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500'}`}
+                 title="Toggle Debug Console"
+               >
+                  <Bug size={18} />
+               </button>
                <button className="flex items-center gap-1 px-3 py-1.5 bg-black dark:bg-white text-white dark:text-black rounded text-xs font-medium hover:opacity-80 transition-opacity">
                   <Play size={12} /> Run
                </button>
@@ -976,7 +783,7 @@ const ProjectDesigner: React.FC<ProjectDesignerProps> = ({ project, lang, onBack
           {/* Editor Area */}
           <div 
               className="flex-1 bg-white dark:bg-gray-900 relative overflow-hidden"
-              onClick={() => showExplorer && setShowExplorer(false)} // Optional: click editor to close sidebar, now maybe not needed if sidebar is pinned
+              onClick={() => showExplorer && setShowExplorer(false)} 
           >
              {activeFileObject ? (
                 <>
@@ -999,6 +806,16 @@ const ProjectDesigner: React.FC<ProjectDesignerProps> = ({ project, lang, onBack
                 </div>
              )}
           </div>
+
+          {/* Debug Console Bottom Panel */}
+          {showBottomPanel && (
+             <DebugConsole 
+                lang={lang}
+                height={bottomPanelHeight}
+                onClose={() => setShowBottomPanel(false)}
+                onResizeStart={() => setIsResizingBottom(true)}
+             />
+          )}
       </div>
 
       {/* Context Menu */}

@@ -151,7 +151,7 @@ const GitRepository: React.FC<GitRepositoryProps> = ({ lang, rootType }) => {
   const largeDiff2 = generateLargeFile(80, 2);
 
   // Mock Commits (10 items for testing) with branch info
-  const mockCommits: Commit[] = [
+  const initialCommits: Commit[] = [
       { id: 'c10', message: 'fix: navigation bar overflow issue', author: 'Admin', date: '2023-10-29 10:00', branch: 'main', files: [] },
       { id: 'c9', message: 'Merge branch feature/login-page', author: 'Admin', date: '2023-10-28 16:30', branch: 'main', files: [] },
       { id: 'c8', message: 'feat: add user profile page', author: 'Alice', date: '2023-10-28 14:20', branch: 'feature/login-page', files: [] },
@@ -175,6 +175,8 @@ const GitRepository: React.FC<GitRepositoryProps> = ({ lang, rootType }) => {
           }
       ]
   }));
+
+  const [commitHistory, setCommitHistory] = useState<Commit[]>(initialCommits);
 
   // Working Directory Changes State
   const [workingChanges, setWorkingChanges] = useState<MockDiffFile[]>([
@@ -207,7 +209,7 @@ const GitRepository: React.FC<GitRepositoryProps> = ({ lang, rootType }) => {
 
   const displayFiles = viewMode === 'changes' 
       ? workingChanges 
-      : (mockCommits.find(c => c.id === selectedCommitId)?.files || []);
+      : (commitHistory.find(c => c.id === selectedCommitId)?.files || []);
   
   const displayDiff = displayFiles.find(f => f.id === selectedFileId);
 
@@ -266,10 +268,48 @@ const GitRepository: React.FC<GitRepositoryProps> = ({ lang, rootType }) => {
       setTimeout(() => {
           setActionLoading(null);
           showStatus('success', `${action} completed successfully`);
+          
           if (action === 'commit') {
+              // 1. Determine files to commit
+              let filesToCommit = stagedList;
+              let isStageAll = false;
+              if (filesToCommit.length === 0) {
+                  // Stage All if nothing selected
+                  filesToCommit = unstagedList;
+                  isStageAll = true;
+              }
+
+              if (filesToCommit.length === 0) {
+                  showStatus('error', 'No changes to commit');
+                  return;
+              }
+
+              if (isStageAll) {
+                  addGitLog('stage', '.');
+              }
               addGitLog('commit', commitMessage);
+
+              // 2. Add to history
+              const newCommit: Commit = {
+                  id: `c_${Date.now()}`,
+                  message: commitMessage,
+                  author: 'You',
+                  date: new Date().toISOString().replace('T', ' ').slice(0, 16),
+                  branch: currentBranch,
+                  files: filesToCommit
+              };
+              setCommitHistory([newCommit, ...commitHistory]);
+
+              // 3. Remove from Working Directory
+              const committedIds = filesToCommit.map(f => f.id);
+              setWorkingChanges(prev => prev.filter(f => !committedIds.includes(f.id)));
+              setStagedFiles([]);
               setCommitMessage('');
-              setStagedFiles([]); 
+              
+              if (selectedFileId && committedIds.includes(selectedFileId)) {
+                  setSelectedFileId(null);
+              }
+
           } else {
               addGitLog(action);
           }
@@ -534,7 +574,11 @@ const GitRepository: React.FC<GitRepositoryProps> = ({ lang, rootType }) => {
                     </div>
                     <div className="p-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
                         <textarea value={commitMessage} onChange={(e) => setCommitMessage(e.target.value)} placeholder={t.gitMessagePlaceholder} className="w-full h-20 p-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-xs resize-none outline-none focus:border-nebula-500 mb-2" />
-                        <button onClick={() => handleAction('commit')} disabled={!commitMessage.trim() || stagedFiles.length === 0 || !!actionLoading} className="w-full py-1.5 bg-nebula-600 text-white rounded-md text-xs font-bold hover:bg-nebula-700 transition-colors disabled:opacity-50 flex justify-center items-center gap-2">
+                        <button 
+                            onClick={() => handleAction('commit')} 
+                            disabled={!commitMessage.trim() || (stagedFiles.length === 0 && workingChanges.length === 0) || !!actionLoading} 
+                            className="w-full py-1.5 bg-nebula-600 text-white rounded-md text-xs font-bold hover:bg-nebula-700 transition-colors disabled:opacity-50 flex justify-center items-center gap-2"
+                        >
                             {actionLoading === 'commit' ? <Loader2 size={12} className="animate-spin" /> : <GitCommit size={12} />} {t.gitCommit}
                         </button>
                     </div>
@@ -543,7 +587,7 @@ const GitRepository: React.FC<GitRepositoryProps> = ({ lang, rootType }) => {
                   // HISTORY MODE
                   <div className="flex flex-col h-full">
                     <div className="p-2 border-b border-gray-200 dark:border-gray-700 font-bold text-gray-600 text-xs uppercase bg-gray-50 dark:bg-gray-800 flex justify-between items-center">
-                        <span>{t.gitHistory} ({mockCommits.length})</span>
+                        <span>{t.gitHistory} ({commitHistory.length})</span>
                         <div className="flex gap-1">
                             <button onClick={() => setHistoryViewType('list')} className={`p-1 rounded ${historyViewType === 'list' ? 'bg-white dark:bg-gray-600 shadow text-nebula-600' : 'text-gray-400'}`}><ListIcon size={10} /></button>
                             <button onClick={() => setHistoryViewType('graph')} className={`p-1 rounded ${historyViewType === 'graph' ? 'bg-white dark:bg-gray-600 shadow text-nebula-600' : 'text-gray-400'}`}><GitGraphIcon size={10} /></button>
@@ -553,7 +597,7 @@ const GitRepository: React.FC<GitRepositoryProps> = ({ lang, rootType }) => {
                     <div className="flex-1 flex flex-col min-h-0 bg-white dark:bg-gray-900 overflow-y-auto">
                         {historyViewType === 'list' ? (
                             // List View
-                            mockCommits.map(commit => (
+                            commitHistory.map(commit => (
                                 <div key={commit.id} onClick={() => { setSelectedCommitId(commit.id); setSelectedFileId(null); }} className={`p-3 border-b border-gray-100 dark:border-gray-800 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors relative group ${selectedCommitId === commit.id ? 'bg-nebula-50 dark:bg-nebula-900/20' : ''}`}>
                                     {selectedCommitId === commit.id && <div className="absolute left-0 top-0 bottom-0 w-1 bg-nebula-500"></div>}
                                     <div className="flex items-start gap-2 mb-1">
@@ -568,23 +612,23 @@ const GitRepository: React.FC<GitRepositoryProps> = ({ lang, rootType }) => {
                         ) : (
                             // Graph View (SVG)
                             <div className="relative min-h-full">
-                                <svg className="absolute top-0 left-0 w-8 h-full pointer-events-none" style={{ height: mockCommits.length * 40 }}>
-                                    {mockCommits.map((commit, i) => {
+                                <svg className="absolute top-0 left-0 w-8 h-full pointer-events-none" style={{ height: commitHistory.length * 40 }}>
+                                    {commitHistory.map((commit, i) => {
                                         const x = commit.branch === 'main' ? 14 : 26;
                                         const y = i * 40 + 20;
                                         const nextY = (i + 1) * 40 + 20;
                                         // Draw line to next if exists (simplified linear + branch merge visual)
-                                        const isLast = i === mockCommits.length - 1;
+                                        const isLast = i === commitHistory.length - 1;
                                         return (
                                             <g key={commit.id}>
-                                                {!isLast && <line x1={x} y1={y} x2={commit.branch === mockCommits[i+1]?.branch ? x : (mockCommits[i+1]?.branch === 'main' ? 14 : 26)} y2={nextY} stroke={commit.branch === 'main' ? '#3b82f6' : '#8b5cf6'} strokeWidth="2" />}
+                                                {!isLast && <line x1={x} y1={y} x2={commit.branch === commitHistory[i+1]?.branch ? x : (commitHistory[i+1]?.branch === 'main' ? 14 : 26)} y2={nextY} stroke={commit.branch === 'main' ? '#3b82f6' : '#8b5cf6'} strokeWidth="2" />}
                                                 <circle cx={x} cy={y} r="4" fill={commit.branch === 'main' ? '#3b82f6' : '#8b5cf6'} />
                                             </g>
                                         )
                                     })}
                                 </svg>
                                 <div className="pl-8">
-                                    {mockCommits.map(commit => (
+                                    {commitHistory.map(commit => (
                                         <div key={commit.id} onClick={() => { setSelectedCommitId(commit.id); setSelectedFileId(null); }} className={`h-10 flex items-center px-2 border-b border-gray-100 dark:border-gray-800 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 text-xs ${selectedCommitId === commit.id ? 'bg-nebula-50 dark:bg-nebula-900/20' : ''}`}>
                                             <div className="truncate flex-1">{commit.message}</div>
                                             <div className="text-[10px] text-gray-400 w-16 text-right">{commit.date.slice(5, 10)}</div>
