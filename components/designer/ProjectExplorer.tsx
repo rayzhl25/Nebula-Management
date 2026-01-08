@@ -4,7 +4,8 @@ import {
   Search, X, Plus, ChevronDown, ChevronRight, 
   Monitor, Smartphone, Server, Database, Globe 
 } from 'lucide-react';
-import { FileTree, FileSystemItem } from './FileTree';
+import { FileTree } from './FileTree';
+import { FileSystemItem } from '../../types';
 
 interface ProjectExplorerProps {
   isVisible: boolean;

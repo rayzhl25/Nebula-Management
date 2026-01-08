@@ -34,34 +34,12 @@ import {
   CloudOff
 } from 'lucide-react';
 import { LOCALE } from '../../constants';
-import { Language } from '../../types';
+import { Language, GitCommit as IGitCommit, GitFileStatus, GitDiffLine } from '../../types';
+import { fetchGitChanges, fetchGitHistory, performGitAction } from '../../services/mockService';
 
 interface GitRepositoryProps {
   lang: Language;
   rootType: string;
-}
-
-interface DiffLine {
-    num: number | null;
-    text: string;
-    type: 'normal' | 'add' | 'remove' | 'empty';
-}
-
-interface MockDiffFile {
-    id: string;
-    name: string; // Full path e.g. "src/components/Button.tsx"
-    status: 'modified' | 'added' | 'deleted';
-    leftLines: DiffLine[];
-    rightLines: DiffLine[];
-}
-
-interface Commit {
-    id: string;
-    message: string;
-    author: string;
-    date: string;
-    branch: string; // Added for Graph View
-    files: MockDiffFile[];
 }
 
 // Tree Node Structure
@@ -71,7 +49,7 @@ interface FileNode {
     fullPath: string;
     type: 'folder' | 'file';
     children: Record<string, FileNode>;
-    fileData?: MockDiffFile; // Only for files
+    fileData?: GitFileStatus; // Only for files
 }
 
 const PROJECT_VAR = '$PROJECT_DIR';
@@ -95,6 +73,10 @@ const GitRepository: React.FC<GitRepositoryProps> = ({ lang, rootType }) => {
   const [historyViewType, setHistoryViewType] = useState<'list' | 'graph'>('list'); // List vs Graph for history
   const [selectedCommitId, setSelectedCommitId] = useState<string | null>(null);
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
+  
+  // -- State: Data from Backend --
+  const [workingChanges, setWorkingChanges] = useState<GitFileStatus[]>([]);
+  const [commitHistory, setCommitHistory] = useState<IGitCommit[]>([]);
   
   // -- State: Staging --
   const [stagedFiles, setStagedFiles] = useState<string[]>([]); // IDs of staged files
@@ -121,86 +103,28 @@ const GitRepository: React.FC<GitRepositoryProps> = ({ lang, rootType }) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const isScrollingRef = useRef<'left' | 'right' | null>(null);
 
-  // --- Helpers: Data Generation ---
-
-  const generateLargeFile = (baseLines: number, seed: number = 1): { left: DiffLine[], right: DiffLine[] } => {
-      const left: DiffLine[] = [];
-      const right: DiffLine[] = [];
-      
-      for (let i = 1; i <= baseLines; i++) {
-          const text = `  const v${seed}_${i} = computeValue(${i * seed}); // Logic line ${i}`;
-          
-          if (i % 10 === 0) {
-              left.push({ num: i, text: text + ' [OLD]', type: 'remove' });
-              right.push({ num: i, text: text + ' [NEW]', type: 'add' });
-          } else if (i % 25 === 0) {
-              left.push({ num: i, text: text + ' [DEL]', type: 'remove' });
-              right.push({ num: null, text: '', type: 'empty' });
-          } else if (i % 26 === 0) {
-              left.push({ num: null, text: '', type: 'empty' });
-              right.push({ num: i, text: text + ' [ADD]', type: 'add' });
-          } else {
-              left.push({ num: i, text, type: 'normal' });
-              right.push({ num: i, text, type: 'normal' });
-          }
+  // --- Initial Data Load ---
+  useEffect(() => {
+      if (isConnected) {
+          loadGitData();
       }
-      return { left, right };
+  }, [isConnected]);
+
+  const loadGitData = async () => {
+      setActionLoading('fetch');
+      try {
+          const [changes, history] = await Promise.all([
+              fetchGitChanges(),
+              fetchGitHistory()
+          ]);
+          setWorkingChanges(changes);
+          setCommitHistory(history);
+      } catch (error) {
+          console.error("Failed to load git data", error);
+      } finally {
+          setActionLoading(null);
+      }
   };
-
-  const largeDiff1 = generateLargeFile(120, 1);
-  const largeDiff2 = generateLargeFile(80, 2);
-
-  // Mock Commits (10 items for testing) with branch info
-  const initialCommits: Commit[] = [
-      { id: 'c10', message: 'fix: navigation bar overflow issue', author: 'Admin', date: '2023-10-29 10:00', branch: 'main', files: [] },
-      { id: 'c9', message: 'Merge branch feature/login-page', author: 'Admin', date: '2023-10-28 16:30', branch: 'main', files: [] },
-      { id: 'c8', message: 'feat: add user profile page', author: 'Alice', date: '2023-10-28 14:20', branch: 'feature/login-page', files: [] },
-      { id: 'c7', message: 'chore: update dependencies', author: 'Bob', date: '2023-10-28 09:15', branch: 'feature/login-page', files: [] },
-      { id: 'c6', message: 'refactor: extract auth logic', author: 'Alice', date: '2023-10-27 18:45', branch: 'feature/login-page', files: [] },
-      { id: 'c5', message: 'style: dark mode improvements', author: 'Admin', date: '2023-10-27 11:00', branch: 'main', files: [] },
-      { id: 'c4', message: 'fix: typo in readme', author: 'Bob', date: '2023-10-26 15:30', branch: 'main', files: [] },
-      { id: 'c3', message: 'feat: implement search grounding', author: 'Admin', date: '2023-10-26 10:00', branch: 'main', files: [] },
-      { id: 'c2', message: 'perf: optimize image loading', author: 'Alice', date: '2023-10-25 16:20', branch: 'main', files: [] },
-      { id: 'c1', message: 'init: project setup', author: 'Admin', date: '2023-10-25 09:00', branch: 'main', files: [] },
-  ].map(c => ({
-      ...c,
-      files: [
-          { 
-              id: `f_${c.id}_1`, name: `src/components/Comp_${c.id}.tsx`, status: 'modified', 
-              leftLines: largeDiff1.left, rightLines: largeDiff1.right 
-          },
-          {
-              id: `f_${c.id}_2`, name: `src/utils/helper_${c.id}.ts`, status: 'added',
-              leftLines: [], rightLines: largeDiff2.right.filter(l => l.type !== 'empty')
-          }
-      ]
-  }));
-
-  const [commitHistory, setCommitHistory] = useState<Commit[]>(initialCommits);
-
-  // Working Directory Changes State
-  const [workingChanges, setWorkingChanges] = useState<MockDiffFile[]>([
-      { 
-          id: 'w1', name: 'src/components/Header.tsx', status: 'modified',
-          leftLines: largeDiff1.left, rightLines: largeDiff1.right
-      },
-      {
-          id: 'w2', name: 'src/utils/auth.ts', status: 'added',
-          leftLines: [], rightLines: largeDiff2.right.filter(l => l.type !== 'empty')
-      },
-      {
-          id: 'w3', name: 'src/pages/Dashboard/Charts.tsx', status: 'modified',
-          leftLines: [{num:1, text:'// Chart Logic', type:'normal'}], rightLines: [{num:1, text:'// Updated Chart Logic', type:'add'}]
-      },
-      {
-          id: 'w4', name: 'public/locales/zh.json', status: 'modified',
-          leftLines: [{num:1, text:'"hello": "你好"', type:'normal'}], rightLines: [{num:1, text:'"hello": "您好"', type:'add'}]
-      },
-      {
-          id: 'w5', name: 'src/assets/logo.svg', status: 'deleted',
-          leftLines: [{num:1, text:'<svg>...</svg>', type:'normal'}], rightLines: []
-      }
-  ]);
 
   // --- Derived State ---
   
@@ -261,59 +185,52 @@ const GitRepository: React.FC<GitRepositoryProps> = ({ lang, rootType }) => {
     }
   };
 
-  const handleAction = (action: string) => {
+  const handleAction = async (action: string) => {
       if (actionLoading) return;
-      setActionLoading(action);
       
-      setTimeout(() => {
-          setActionLoading(null);
-          showStatus('success', `${action} completed successfully`);
-          
-          if (action === 'commit') {
-              // 1. Determine files to commit
-              let filesToCommit = stagedList;
-              let isStageAll = false;
-              if (filesToCommit.length === 0) {
-                  // Stage All if nothing selected
-                  filesToCommit = unstagedList;
-                  isStageAll = true;
-              }
-
-              if (filesToCommit.length === 0) {
-                  showStatus('error', 'No changes to commit');
-                  return;
-              }
-
-              if (isStageAll) {
-                  addGitLog('stage', '.');
-              }
-              addGitLog('commit', commitMessage);
-
-              // 2. Add to history
-              const newCommit: Commit = {
-                  id: `c_${Date.now()}`,
-                  message: commitMessage,
-                  author: 'You',
-                  date: new Date().toISOString().replace('T', ' ').slice(0, 16),
-                  branch: currentBranch,
-                  files: filesToCommit
-              };
-              setCommitHistory([newCommit, ...commitHistory]);
-
-              // 3. Remove from Working Directory
-              const committedIds = filesToCommit.map(f => f.id);
-              setWorkingChanges(prev => prev.filter(f => !committedIds.includes(f.id)));
-              setStagedFiles([]);
-              setCommitMessage('');
-              
-              if (selectedFileId && committedIds.includes(selectedFileId)) {
-                  setSelectedFileId(null);
-              }
-
-          } else {
-              addGitLog(action);
+      if (action === 'commit') {
+          // 1. Determine files to commit
+          let filesToCommit = stagedList;
+          let isStageAll = false;
+          if (filesToCommit.length === 0) {
+              // Stage All if nothing selected
+              filesToCommit = unstagedList;
+              isStageAll = true;
           }
-      }, 800);
+
+          if (filesToCommit.length === 0) {
+              showStatus('error', 'No changes to commit');
+              return;
+          }
+
+          setActionLoading(action);
+          if (isStageAll) {
+              addGitLog('stage', '.');
+          }
+          addGitLog('commit', commitMessage);
+
+          await performGitAction('commit', { message: commitMessage, files: filesToCommit.map(f => f.id) });
+          
+          // Refresh Data
+          loadGitData();
+          setStagedFiles([]);
+          setCommitMessage('');
+          if (selectedFileId) setSelectedFileId(null);
+          showStatus('success', 'Committed successfully');
+          setActionLoading(null);
+
+      } else {
+          setActionLoading(action);
+          addGitLog(action);
+          await performGitAction(action, {});
+          
+          if (action === 'fetch' || action === 'pull') {
+              loadGitData();
+          }
+          
+          showStatus('success', `${action} completed successfully`);
+          setActionLoading(null);
+      }
   };
 
   const showStatus = (type: 'success' | 'error', text: string) => {
@@ -345,9 +262,11 @@ const GitRepository: React.FC<GitRepositoryProps> = ({ lang, rootType }) => {
       if (file) {
           if (confirm(`Are you sure you want to discard changes in ${file.name}? This cannot be undone.`)) {
               addGitLog('discard', file.name);
-              setWorkingChanges(prev => prev.filter(f => f.id !== id));
-              if (selectedFileId === id) setSelectedFileId(null);
-              showStatus('success', 'Changes discarded');
+              performGitAction('discard', { fileId: id }).then(() => {
+                  setWorkingChanges(prev => prev.filter(f => f.id !== id));
+                  if (selectedFileId === id) setSelectedFileId(null);
+                  showStatus('success', 'Changes discarded');
+              });
           }
       }
   };
@@ -395,7 +314,7 @@ const GitRepository: React.FC<GitRepositoryProps> = ({ lang, rootType }) => {
   };
 
   // --- Tree Rendering ---
-  const buildFileTree = (files: MockDiffFile[]) => {
+  const buildFileTree = (files: GitFileStatus[]) => {
       const root: Record<string, FileNode> = {};
       files.forEach(file => {
           const parts = file.name.split('/');
@@ -441,7 +360,7 @@ const GitRepository: React.FC<GitRepositoryProps> = ({ lang, rootType }) => {
       ));
   };
 
-  const renderFileList = (files: MockDiffFile[], isStagedContext: boolean) => {
+  const renderFileList = (files: GitFileStatus[], isStagedContext: boolean) => {
       if (fileViewType === 'list') {
           return files.map(file => (
               <FileItem 
@@ -787,7 +706,7 @@ const FileItem = ({ file, isSelected, onSelect, isStaged, onStage, onUnstage, on
     );
 };
 
-const DiffLineRender = ({ line, side }: { line: DiffLine, side: 'left' | 'right' }) => {
+const DiffLineRender = ({ line, side }: { line: GitDiffLine, side: 'left' | 'right' }) => {
     let bgClass = 'bg-transparent';
     let textClass = 'text-gray-600 dark:text-gray-300';
     let numClass = 'text-gray-400 border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50';
@@ -806,7 +725,7 @@ const DiffLineRender = ({ line, side }: { line: DiffLine, side: 'left' | 'right'
     );
 };
 
-const DiffMinimap = ({ diff, containerRef }: { diff: MockDiffFile, containerRef: React.RefObject<HTMLDivElement> }) => {
+const DiffMinimap = ({ diff, containerRef }: { diff: GitFileStatus, containerRef: React.RefObject<HTMLDivElement> }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     useEffect(() => {
         const canvas = canvasRef.current;

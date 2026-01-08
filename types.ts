@@ -104,3 +104,42 @@ export interface SystemInfo {
   licenseValidUntil: string;
   copyright: string;
 }
+
+// --- Git Related Types ---
+
+export interface GitDiffLine {
+    num: number | null;
+    text: string;
+    type: 'normal' | 'add' | 'remove' | 'empty';
+}
+
+export interface GitFileStatus {
+    id: string;
+    name: string; // Full path
+    status: 'modified' | 'added' | 'deleted';
+    leftLines: GitDiffLine[];
+    rightLines: GitDiffLine[];
+}
+
+export interface GitCommit {
+    id: string;
+    message: string;
+    author: string;
+    date: string;
+    branch: string;
+    files: GitFileStatus[]; // Files changed in this commit
+}
+
+// --- File System Types ---
+
+export type FileType = 'frontend' | 'backend' | 'database' | 'external' | 'folder' | 'settings' | 'git_repo';
+
+export interface FileSystemItem {
+  id: string;
+  name: string;
+  type: FileType;
+  children?: FileSystemItem[];
+  isOpen?: boolean;
+  lastModified?: string;
+  parentId?: string | null; // Added for easier flat-to-tree manipulation
+}

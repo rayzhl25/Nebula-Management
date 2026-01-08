@@ -21,17 +21,7 @@ import {
   FolderInput,
   GitGraph
 } from 'lucide-react';
-
-export type FileType = 'frontend' | 'backend' | 'database' | 'external' | 'folder' | 'settings' | 'git_repo';
-
-export interface FileSystemItem {
-  id: string;
-  name: string;
-  type: FileType;
-  children?: FileSystemItem[];
-  isOpen?: boolean;
-  lastModified?: string;
-}
+import { FileSystemItem, FileType } from '../../types';
 
 interface FileTreeProps {
   items: FileSystemItem[];

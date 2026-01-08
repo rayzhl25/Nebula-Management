@@ -24,7 +24,7 @@ import {
   Terminal,
   AlertCircle
 } from 'lucide-react';
-import { Language } from '../types';
+import { Language, FileSystemItem, FileType } from '../types';
 import { LOCALE } from '../constants';
 import FrontendDesigner from './designer/FrontendDesigner';
 import BackendDesigner from './designer/BackendDesigner';
@@ -34,7 +34,15 @@ import GitRepository from './designer/GitRepository';
 import ProjectSettings from './designer/ProjectSettings';
 import DebugConsole from './designer/DebugConsole';
 import { ProjectExplorer } from './designer/ProjectExplorer';
-import { FileTree, FileSystemItem, ContextMenu, FileType } from './designer/FileTree';
+import { ContextMenu, FileTree } from './designer/FileTree';
+import { 
+    fetchProjectFiles, 
+    createNode, 
+    updateNode, 
+    deleteNode, 
+    moveNode, 
+    copyNode 
+} from '../services/mockService';
 
 interface ProjectDesignerProps {
   project: any;
@@ -63,92 +71,17 @@ interface FileDialogState {
 const ProjectDesigner: React.FC<ProjectDesignerProps> = ({ project, lang, onBack }) => {
   const t = LOCALE[lang];
   
-  // --- Initial Data ---
-  const initialPages: FileSystemItem[] = [
-    { id: 'p1', name: '登录页面', type: 'frontend', lastModified: '2023-10-25 10:00' },
-    { id: 'p2', name: '工作台', type: 'frontend', lastModified: '2023-10-24 14:30' },
-    { 
-      id: 'f_auth', name: '认证模块', type: 'folder', isOpen: true, lastModified: '2023-10-20 09:15',
-      children: [
-        { id: 'p3', name: '注册页面', type: 'frontend', lastModified: '2023-10-21 11:20' },
-        { id: 'p4', name: '忘记密码', type: 'frontend', lastModified: '2023-10-22 16:45' }
-      ]
-    }
-  ];
-
-  const initialApps: FileSystemItem[] = [
-    { id: 'app1', name: '移动端首页', type: 'frontend', lastModified: '2023-10-25 10:00' },
-    { id: 'app2', name: '个人中心', type: 'frontend', lastModified: '2023-10-24 14:30' }
-  ];
-
-  const initialApis: FileSystemItem[] = [
-    { id: 'a1', name: 'auth_login', type: 'backend', lastModified: '2023-10-25 10:00' },
-    { id: 'a2', name: 'get_user_info', type: 'backend', lastModified: '2023-10-24 14:30' },
-    {
-      id: 'f_users', name: '用户管理', type: 'folder', isOpen: false, lastModified: '2023-10-20 09:15',
-      children: [
-        { id: 'a3', name: 'create_user', type: 'backend', lastModified: '2023-10-21 11:20' },
-        { id: 'a4', name: 'delete_user', type: 'backend', lastModified: '2023-10-22 16:45' }
-      ]
-    }
-  ];
-
-  const initialModels: FileSystemItem[] = [
-    { 
-        id: 'db_main', name: 'Main Database', type: 'folder', isOpen: true, lastModified: '2023-10-20 09:15',
-        children: [
-            { id: 'd1', name: 'sys_user', type: 'database', lastModified: '2023-10-21 11:20' },
-            { id: 'd2', name: 'sys_role', type: 'database', lastModified: '2023-10-22 16:45' },
-        ]
-    },
-    {
-        id: 'db_logs', name: 'Log Database', type: 'folder', isOpen: false, lastModified: '2023-10-20 09:15',
-        children: [
-            { id: 'd3', name: 'sys_log', type: 'database', lastModified: '2023-10-21 11:20' }
-        ]
-    }
-  ];
-
-  const initialExternalApis: FileSystemItem[] = [
-    {
-        id: 'ext_erp', name: 'ERP System', type: 'folder', isOpen: true, lastModified: '2023-10-20 09:15',
-        children: [
-            { id: 'ext_1', name: 'Get Order', type: 'external', lastModified: '2023-10-21 11:20' },
-            { id: 'ext_2', name: 'Sync Inventory', type: 'external', lastModified: '2023-10-22 16:45' }
-        ]
-    },
-    {
-        id: 'ext_pay', name: 'Payment Gateway', type: 'folder', isOpen: false, lastModified: '2023-10-20 09:15',
-        children: [
-            { id: 'ext_3', name: 'Create Charge', type: 'external', lastModified: '2023-10-21 11:20' }
-        ]
-    }
-  ];
-
-  // Mock Local Files for Directory Dialog
-  const initialLocalFiles: FileSystemItem[] = [
-      { id: 'loc_1', name: 'index.html', type: 'frontend', lastModified: '2023-10-26 09:00' },
-      { id: 'loc_2', name: 'package.json', type: 'frontend', lastModified: '2023-10-26 09:00' },
-      { 
-          id: 'loc_f1', name: 'src', type: 'folder', isOpen: true, lastModified: '2023-10-26 09:00',
-          children: [
-              { id: 'loc_3', name: 'App.tsx', type: 'frontend', lastModified: '2023-10-26 09:05' },
-              { id: 'loc_4', name: 'main.tsx', type: 'frontend', lastModified: '2023-10-26 09:05' }
-          ]
-      }
-  ];
-
   // --- State ---
-  const [pages, setPages] = useState<FileSystemItem[]>(initialPages);
-  const [apps, setApps] = useState<FileSystemItem[]>(initialApps);
-  const [apis, setApis] = useState<FileSystemItem[]>(initialApis);
-  const [models, setModels] = useState<FileSystemItem[]>(initialModels);
-  const [externalApis, setExternalApis] = useState<FileSystemItem[]>(initialExternalApis);
+  const [pages, setPages] = useState<FileSystemItem[]>([]);
+  const [apps, setApps] = useState<FileSystemItem[]>([]);
+  const [apis, setApis] = useState<FileSystemItem[]>([]);
+  const [models, setModels] = useState<FileSystemItem[]>([]);
+  const [externalApis, setExternalApis] = useState<FileSystemItem[]>([]);
+  
+  const [isLoadingFiles, setIsLoadingFiles] = useState(false);
 
-  const [activeTabId, setActiveTabId] = useState<string>('t1');
-  const [tabs, setTabs] = useState<Tab[]>([
-    { id: 't1', fileId: 'p1', title: '登录页面', type: 'frontend' }
-  ]);
+  const [activeTabId, setActiveTabId] = useState<string>('');
+  const [tabs, setTabs] = useState<Tab[]>([]);
   
   // UI State
   const [showExplorer, setShowExplorer] = useState(true); // Default show
@@ -183,6 +116,48 @@ const ProjectDesigner: React.FC<ProjectDesignerProps> = ({ project, lang, onBack
   const [dialog, setDialog] = useState<FileDialogState>({
     isOpen: false, type: 'create_file', targetId: null, value: ''
   });
+
+  // Mock local files for sync dialog
+  const initialLocalFiles: FileSystemItem[] = useMemo(() => [
+      { id: 'loc_1', name: 'src', type: 'folder', children: [
+          { id: 'loc_1_1', name: 'App.tsx', type: 'file' },
+          { id: 'loc_1_2', name: 'index.css', type: 'file' }
+      ]},
+      { id: 'loc_2', name: 'package.json', type: 'file' },
+      { id: 'loc_3', name: 'README.md', type: 'file' },
+  ], []);
+
+  // --- Initialize Data ---
+  useEffect(() => {
+      loadProjectFiles();
+  }, [project.id]);
+
+  const loadProjectFiles = async () => {
+      setIsLoadingFiles(true);
+      try {
+          const [p, a, api, m, ext] = await Promise.all([
+              fetchProjectFiles(project.id, 'pages'),
+              fetchProjectFiles(project.id, 'apps'),
+              fetchProjectFiles(project.id, 'apis'),
+              fetchProjectFiles(project.id, 'models'),
+              fetchProjectFiles(project.id, 'external')
+          ]);
+          setPages(p);
+          setApps(a);
+          setApis(api);
+          setModels(m);
+          setExternalApis(ext);
+          
+          // Open first file if tabs empty
+          if (p.length > 0 && !p[0].children && tabs.length === 0) {
+              handleOpenFile(p[0]);
+          }
+      } catch (err) {
+          console.error("Failed to load project files", err);
+      } finally {
+          setIsLoadingFiles(false);
+      }
+  };
 
   // --- Resizing Logic (Sidebar) ---
   useEffect(() => {
@@ -254,23 +229,7 @@ const ProjectDesigner: React.FC<ProjectDesignerProps> = ({ project, lang, onBack
     return null;
   };
 
-  // Helper to find parent of a specific item
-  const findParent = (items: FileSystemItem[], childId: string): FileSystemItem | null => {
-    for (const item of items) {
-      if (item.children) {
-        if (item.children.some(c => c.id === childId)) return item;
-        const found = findParent(item.children, childId);
-        if (found) return found;
-      }
-    }
-    return null;
-  };
-
-  const getFileById = (id: string): FileSystemItem | null => {
-    return findItem(pages, id) || findItem(apps, id) || findItem(apis, id) || findItem(models, id) || findItem(externalApis, id);
-  };
-
-  // Helper to update tree state immutably
+  // Helper to update tree state immutably (local UI update)
   const updateTree = (
     items: FileSystemItem[], 
     targetId: string, 
@@ -285,63 +244,6 @@ const ProjectDesigner: React.FC<ProjectDesignerProps> = ({ project, lang, onBack
       }
       return item;
     });
-  };
-
-  // Helper to add item to tree
-  const addToTree = (
-    items: FileSystemItem[], 
-    parentId: string | null, 
-    newItem: FileSystemItem
-  ): FileSystemItem[] => {
-    if (!parentId) {
-      // Add to root
-      return [...items, newItem];
-    }
-    return items.map(item => {
-      if (item.id === parentId && item.type === 'folder') {
-        return { ...item, children: [...(item.children || []), newItem], isOpen: true };
-      }
-      if (item.children) {
-        return { ...item, children: addToTree(item.children, parentId, newItem) };
-      }
-      return item;
-    });
-  };
-
-  // Helper to delete from tree
-  const deleteFromTree = (items: FileSystemItem[], targetId: string): FileSystemItem[] => {
-    return items.filter(item => item.id !== targetId).map(item => {
-      if (item.children) {
-        return { ...item, children: deleteFromTree(item.children, targetId) };
-      }
-      return item;
-    });
-  };
-
-  // Helper to duplicate item in tree
-  const duplicateInTree = (items: FileSystemItem[], targetId: string): FileSystemItem[] => {
-    // Deep copy helper with ID regeneration
-    const cloneItem = (item: FileSystemItem, suffix: string = ''): FileSystemItem => {
-        const newId = `${item.type}_${Date.now()}_${Math.floor(Math.random()*1000)}`;
-        return {
-            ...item,
-            id: newId,
-            name: suffix ? `${item.name}${suffix}` : item.name,
-            children: item.children ? item.children.map(c => cloneItem(c)) : undefined
-        };
-    };
-
-    let result: FileSystemItem[] = [];
-    for (const item of items) {
-        result.push(item);
-        if (item.id === targetId) {
-            result.push(cloneItem(item, ' 副本'));
-        }
-        if (item.children) {
-            item.children = duplicateInTree(item.children, targetId);
-        }
-    }
-    return result;
   };
 
   // --- Handlers ---
@@ -452,53 +354,24 @@ const ProjectDesigner: React.FC<ProjectDesignerProps> = ({ project, lang, onBack
   };
 
   // Handle Drag and Drop Move
-  const handleMoveNode = (draggedId: string, targetId: string, rootType: string) => {
-    // 1. Determine which tree to update
-    let setTree: React.Dispatch<React.SetStateAction<FileSystemItem[]>> | null = null;
-    let items: FileSystemItem[] = [];
-
-    if (rootType === 'pages') { setTree = setPages; items = pages; }
-    else if (rootType === 'apps') { setTree = setApps; items = apps; }
-    else if (rootType === 'apis') { setTree = setApis; items = apis; }
-    else if (rootType === 'models') { setTree = setModels; items = models; }
-    else if (rootType === 'external') { setTree = setExternalApis; items = externalApis; }
-
-    if (!setTree) return;
-
-    // 2. Find the dragged item and target item
-    const draggedItem = findItem(items, draggedId);
-    const targetItem = findItem(items, targetId);
-    
-    if (!draggedItem || !targetItem) return;
-
-    // 3. Determine new parent
-    let newParentId: string | null = null;
-    if (targetItem.type === 'folder') {
-       newParentId = targetItem.id;
-    } else {
-       // If dropping on a file, we move to the same folder (parent) as that file
-       const parent = findParent(items, targetItem.id);
-       newParentId = parent ? parent.id : null;
+  const handleMoveNode = async (draggedId: string, targetId: string, rootType: string) => {
+    // Optimistic UI Update not done here for move to keep tree consistent via reload or complex local logic
+    // Just calling API and reloading for now for simplicity and correctness
+    try {
+        await moveNode(project.id, draggedId, targetId, rootType);
+        // Refresh specific tree
+        const newTree = await fetchProjectFiles(project.id, rootType);
+        if (rootType === 'pages') setPages(newTree);
+        else if (rootType === 'apps') setApps(newTree);
+        else if (rootType === 'apis') setApis(newTree);
+        else if (rootType === 'models') setModels(newTree);
+        else if (rootType === 'external') setExternalApis(newTree);
+    } catch (e) {
+        console.error("Move failed", e);
     }
-
-    // Prevent dropping into itself or if parent is unchanged (optimization)
-    // Note: To be fully correct we should check if newParentId is child of draggedId (if dragging folder)
-    if (draggedId === newParentId) return;
-
-    // Call Backend API Mock
-    // In real app: await api.moveFile({ fileId: draggedId, newParentId: newParentId, oldParentId: ... })
-    console.log(`[API CALL] Moving file ${draggedId} to ${newParentId || 'root'}`);
-
-    // Update UI
-    setTree(prevItems => {
-        // Remove from old location
-        const withoutItem = deleteFromTree(prevItems, draggedId);
-        // Add to new location
-        return addToTree(withoutItem, newParentId, draggedItem);
-    });
   };
 
-  const handleContextMenuAction = (action: string, item: FileSystemItem | null, rootType?: string) => {
+  const handleContextMenuAction = async (action: string, item: FileSystemItem | null, rootType?: string) => {
     setContextMenu({ ...contextMenu, item: null }); // Close menu
     
     // Determine context (Item or Root)
@@ -507,6 +380,8 @@ const ProjectDesigner: React.FC<ProjectDesignerProps> = ({ project, lang, onBack
                                          item && findItem(apps, item.id) ? 'apps' : 
                                          item && findItem(apis, item.id) ? 'apis' : 
                                          item && findItem(models, item.id) ? 'models' : 'external');
+
+    if (!currentRootType) return;
 
     if (action === 'open_dir') {
         setIsProjectDirOpen(true);
@@ -543,59 +418,38 @@ const ProjectDesigner: React.FC<ProjectDesignerProps> = ({ project, lang, onBack
     } else if (action === 'rename' && item) {
       setDialog({ isOpen: true, type: 'rename', targetId: item.id, value: item.name, rootType: currentRootType });
     } else if (action === 'duplicate' && item) {
-        const updateFn = (prev: FileSystemItem[]) => duplicateInTree(prev, item.id);
-        if (findItem(pages, item.id)) setPages(updateFn);
-        else if (findItem(apps, item.id)) setApps(updateFn);
-        else if (findItem(apis, item.id)) setApis(updateFn);
-        else if (findItem(models, item.id)) setModels(updateFn);
-        else if (findItem(externalApis, item.id)) setExternalApis(updateFn);
+        await copyNode(project.id, item.id);
+        // Refresh tree
+        const newTree = await fetchProjectFiles(project.id, currentRootType);
+        updateStateForRoot(currentRootType, newTree);
     } else if (action === 'cut' && item) {
         setClipboard({ type: 'cut', item });
     } else if (action === 'copy' && item) {
         setClipboard({ type: 'copy', item });
     } else if (action === 'paste' && item) {
         if (!clipboard) return;
-        const targetId = item.id; // Paste into this folder
+        const targetParentId = item.id; // Paste into this folder
         
-        // Helper to clone item with new ID
-        const cloneItem = (srcItem: FileSystemItem): FileSystemItem => {
-             const newId = `${srcItem.type}_${Date.now()}_${Math.floor(Math.random()*1000)}`;
-             return {
-                 ...srcItem,
-                 id: newId,
-                 children: srcItem.children ? srcItem.children.map(cloneItem) : undefined
-             };
-        };
-
-        const itemToPaste = clipboard.type === 'copy' ? cloneItem(clipboard.item) : clipboard.item;
-        
-        // Add to new parent
-        const addFn = (prev: FileSystemItem[]) => addToTree(prev, targetId, itemToPaste);
-        
-        if (findItem(pages, targetId)) setPages(addFn);
-        else if (findItem(apps, targetId)) setApps(addFn);
-        else if (findItem(apis, targetId)) setApis(addFn);
-        else if (findItem(models, targetId)) setModels(addFn);
-        else if (findItem(externalApis, targetId)) setExternalApis(addFn);
-
-        // If cut, remove from old location
         if (clipboard.type === 'cut') {
-             const removeFn = (prev: FileSystemItem[]) => deleteFromTree(prev, clipboard.item.id);
-             setPages(removeFn);
-             setApps(removeFn);
-             setApis(removeFn);
-             setModels(removeFn);
-             setExternalApis(removeFn);
-             setClipboard(null);
+            await moveNode(project.id, clipboard.item.id, targetParentId, currentRootType);
+            setClipboard(null);
+        } else {
+            // Backend copy with new parent logic would be needed, leveraging copyNode logic but with target parent
+            // For now, simple duplicate in place then move simulation or assume copyNode supports target
+            // We'll just call copyNode then moveNode for simplicity in this mock
+            const newItem = await copyNode(project.id, clipboard.item.id);
+            if (newItem) await moveNode(project.id, newItem.id, targetParentId, currentRootType);
         }
+        // Refresh tree
+        const newTree = await fetchProjectFiles(project.id, currentRootType);
+        updateStateForRoot(currentRootType, newTree);
+
     } else if (action === 'delete' && item) {
       if (confirm(`Are you sure you want to delete ${item.name}?`)) {
-        const updateFn = (prev: FileSystemItem[]) => deleteFromTree(prev, item.id);
-        if (findItem(pages, item.id)) setPages(updateFn);
-        else if (findItem(apps, item.id)) setApps(updateFn);
-        else if (findItem(apis, item.id)) setApis(updateFn);
-        else if (findItem(models, item.id)) setModels(updateFn);
-        else if (findItem(externalApis, item.id)) setExternalApis(updateFn);
+        await deleteNode(project.id, item.id);
+        // Refresh tree
+        const newTree = await fetchProjectFiles(project.id, currentRootType);
+        updateStateForRoot(currentRootType, newTree);
         
         const tab = tabs.find(t => t.fileId === item.id);
         if (tab) handleCloseTab(tab.id, null);
@@ -603,42 +457,39 @@ const ProjectDesigner: React.FC<ProjectDesignerProps> = ({ project, lang, onBack
     }
   };
 
-  const handleDialogSubmit = () => {
+  const updateStateForRoot = (rootType: string, data: FileSystemItem[]) => {
+      if (rootType === 'pages') setPages(data);
+      else if (rootType === 'apps') setApps(data);
+      else if (rootType === 'apis') setApis(data);
+      else if (rootType === 'models') setModels(data);
+      else if (rootType === 'external') setExternalApis(data);
+  };
+
+  const handleDialogSubmit = async () => {
     const { type, targetId, value, parentType, rootType } = dialog;
-    if (!value.trim()) return;
+    if (!value.trim() || !rootType) return;
 
-    if (type === 'rename' && targetId) {
-      const updateFn = (prev: FileSystemItem[]) => updateTree(prev, targetId, i => ({ ...i, name: value }));
-      if (findItem(pages, targetId)) setPages(updateFn);
-      else if (findItem(apps, targetId)) setApps(updateFn);
-      else if (findItem(apis, targetId)) setApis(updateFn);
-      else if (findItem(models, targetId)) setModels(updateFn);
-      else if (findItem(externalApis, targetId)) setExternalApis(updateFn);
-      
-      setTabs(prev => prev.map(t => t.fileId === targetId ? { ...t, title: value } : t));
-    } else {
-      const newItem: FileSystemItem = {
-        id: `${type === 'create_folder' ? 'f' : 'file'}_${Date.now()}`,
-        name: value,
-        type: type === 'create_folder' ? 'folder' : (parentType || 'frontend'),
-        children: type === 'create_folder' ? [] : undefined,
-        isOpen: true,
-        lastModified: new Date().toISOString().slice(0, 16).replace('T', ' ')
-      };
-
-      const addFn = (prev: FileSystemItem[]) => addToTree(prev, targetId, newItem);
-      
-      // If targetId is null, we are adding to root, check rootType
-      if (rootType === 'pages' || findItem(pages, targetId || '')) setPages(addFn);
-      else if (rootType === 'apps' || findItem(apps, targetId || '')) setApps(addFn);
-      else if (rootType === 'apis' || findItem(apis, targetId || '')) setApis(addFn);
-      else if (rootType === 'models' || findItem(models, targetId || '')) setModels(addFn);
-      else if (rootType === 'external' || findItem(externalApis, targetId || '')) setExternalApis(addFn);
-      
-      if (type === 'create_file') {
-          handleOpenFile(newItem);
-      }
+    try {
+        if (type === 'rename' && targetId) {
+            await updateNode(project.id, targetId, { name: value });
+            // Update Tab if open
+            setTabs(prev => prev.map(t => t.fileId === targetId ? { ...t, title: value } : t));
+        } else {
+            // Create File or Folder
+            const isFolder = type === 'create_folder';
+            const fileType = isFolder ? 'folder' : (parentType || 'frontend');
+            const newItem = await createNode(project.id, rootType, targetId, { name: value, type: fileType });
+            if (type === 'create_file') {
+                handleOpenFile(newItem);
+            }
+        }
+        // Refresh tree
+        const newTree = await fetchProjectFiles(project.id, rootType);
+        updateStateForRoot(rootType, newTree);
+    } catch (e) {
+        console.error("Action failed", e);
     }
+    
     setDialog({ ...dialog, isOpen: false });
   };
 
@@ -656,19 +507,8 @@ const ProjectDesigner: React.FC<ProjectDesignerProps> = ({ project, lang, onBack
       if (root === 'apis') type = 'backend';
       if (root === 'models') type = 'database';
       if (root === 'external') type = 'external';
-
-      const newItem: FileSystemItem = {
-          id: `root_${Date.now()}`,
-          name: isFolder ? 'New Folder' : 'New File',
-          type: isFolder ? 'folder' : type,
-          children: isFolder ? [] : undefined,
-          lastModified: new Date().toISOString().slice(0, 16).replace('T', ' ')
-      };
-      if (root === 'pages') setPages(prev => [...prev, newItem]);
-      if (root === 'apps') setApps(prev => [...prev, newItem]);
-      if (root === 'apis') setApis(prev => [...prev, newItem]);
-      if (root === 'models') setModels(prev => [...prev, newItem]);
-      if (root === 'external') setExternalApis(prev => [...prev, newItem]);
+      
+      setDialog({ isOpen: true, type: isFolder ? 'create_folder' : 'create_file', targetId: null, value: '', parentType: type, rootType: root });
   };
 
   const activeTab = tabs.find(t => t.id === activeTabId);
@@ -765,16 +605,17 @@ const ProjectDesigner: React.FC<ProjectDesignerProps> = ({ project, lang, onBack
             </div>
 
             <div className="flex items-center gap-2">
-               {/* Debug Toggle */}
+               {/* Run Button (Swapped) */}
+               <button className="flex items-center gap-1 px-3 py-1.5 bg-black dark:bg-white text-white dark:text-black rounded text-xs font-medium hover:opacity-80 transition-opacity">
+                  <Play size={12} /> Run
+               </button>
+               {/* Debug Toggle (Swapped) */}
                <button 
                  onClick={() => setShowBottomPanel(!showBottomPanel)} 
                  className={`p-1.5 rounded transition-colors ${showBottomPanel ? 'bg-nebula-100 text-nebula-600 dark:bg-nebula-900/30 dark:text-nebula-400' : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500'}`}
                  title="Toggle Debug Console"
                >
                   <Bug size={18} />
-               </button>
-               <button className="flex items-center gap-1 px-3 py-1.5 bg-black dark:bg-white text-white dark:text-black rounded text-xs font-medium hover:opacity-80 transition-opacity">
-                  <Play size={12} /> Run
                </button>
                <button onClick={handleOpenSettings} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded text-gray-500"><Settings size={18} /></button>
             </div>
@@ -785,7 +626,12 @@ const ProjectDesigner: React.FC<ProjectDesignerProps> = ({ project, lang, onBack
               className="flex-1 bg-white dark:bg-gray-900 relative overflow-hidden"
               onClick={() => showExplorer && setShowExplorer(false)} 
           >
-             {activeFileObject ? (
+             {isLoadingFiles ? (
+                 <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                     <Loader2 className="animate-spin mb-2" size={32} />
+                     <p>Loading project resources...</p>
+                 </div>
+             ) : activeFileObject ? (
                 <>
                   {activeFileObject.type === 'frontend' && <FrontendDesigner file={activeFileObject} lang={lang} />}
                   {activeFileObject.type === 'backend' && <BackendDesigner file={activeFileObject} />}
