@@ -132,7 +132,7 @@ export interface GitCommit {
 
 // --- File System Types ---
 
-export type FileType = 'frontend' | 'backend' | 'database' | 'external' | 'folder' | 'settings' | 'git_repo';
+export type FileType = 'frontend' | 'backend' | 'database' | 'external' | 'folder' | 'settings' | 'git_repo' | 'file';
 
 export interface FileSystemItem {
   id: string;

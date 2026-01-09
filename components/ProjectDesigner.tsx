@@ -117,6 +117,9 @@ const ProjectDesigner: React.FC<ProjectDesignerProps> = ({ project, lang, onBack
     isOpen: false, type: 'create_file', targetId: null, value: ''
   });
 
+  // Tab Drag & Drop State
+  const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
+
   // Mock local files for sync dialog
   const initialLocalFiles: FileSystemItem[] = useMemo(() => [
       { id: 'loc_1', name: 'src', type: 'folder', children: [
@@ -309,6 +312,37 @@ const ProjectDesigner: React.FC<ProjectDesignerProps> = ({ project, lang, onBack
   const handleTabContextMenu = (e: React.MouseEvent, tabId: string) => {
     e.preventDefault();
     setTabContextMenu({ x: e.clientX, y: e.clientY, tabId });
+  };
+
+  // Tab Drag and Drop Handlers
+  const handleTabDragStart = (e: React.DragEvent, tabId: string) => {
+    setDraggedTabId(tabId);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', tabId);
+  };
+
+  const handleTabDragOver = (e: React.DragEvent) => {
+    e.preventDefault(); // Necessary for drop/dragEnter to work smoothly
+  };
+
+  const handleTabDragEnter = (e: React.DragEvent, targetTabId: string) => {
+    e.preventDefault();
+    if (!draggedTabId) return;
+    if (draggedTabId === targetTabId) return;
+
+    const draggedIndex = tabs.findIndex(t => t.id === draggedTabId);
+    const targetIndex = tabs.findIndex(t => t.id === targetTabId);
+
+    if (draggedIndex !== -1 && targetIndex !== -1) {
+      const newTabs = [...tabs];
+      const [movedTab] = newTabs.splice(draggedIndex, 1);
+      newTabs.splice(targetIndex, 0, movedTab);
+      setTabs(newTabs);
+    }
+  };
+
+  const handleTabDragEnd = () => {
+    setDraggedTabId(null);
   };
 
   const handleCloseOthers = () => {
@@ -577,10 +611,16 @@ const ProjectDesigner: React.FC<ProjectDesignerProps> = ({ project, lang, onBack
                  if (tab.type === 'git_repo') Icon = GitGraph;
 
                  const isActive = tab.id === activeTabId;
+                 const isDragged = tab.id === draggedTabId;
 
                  return (
                    <div 
                      key={tab.id}
+                     draggable={true}
+                     onDragStart={(e) => handleTabDragStart(e, tab.id)}
+                     onDragOver={handleTabDragOver}
+                     onDragEnter={(e) => handleTabDragEnter(e, tab.id)}
+                     onDragEnd={handleTabDragEnd}
                      onClick={() => setActiveTabId(tab.id)}
                      onContextMenu={(e) => handleTabContextMenu(e, tab.id)}
                      className={`
@@ -588,6 +628,7 @@ const ProjectDesigner: React.FC<ProjectDesignerProps> = ({ project, lang, onBack
                        ${isActive 
                          ? 'bg-gray-100 dark:bg-gray-800 text-nebula-600 dark:text-white border-gray-200 dark:border-gray-700 font-medium relative top-[1px] shadow-sm z-10' 
                          : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800/50 hover:text-gray-700'}
+                       ${isDragged ? 'opacity-50' : 'opacity-100'}
                      `}
                      style={{ minWidth: '120px', maxWidth: '200px' }}
                    >
